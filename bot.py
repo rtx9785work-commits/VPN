@@ -29,7 +29,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 
 
-TOKEN          = "8451116782:AAEwr_9qkXQanlb1i6T8VjrYm9D1B8UYb6U"
+TOKEN          = "8751204871:AAGVRsFhuACciSRYDczrJmpy4nQE4Vsk6QI"
 ADMIN_ID       = 2039569420
 ADMIN_USERNAME = "hhlnnh"
 
@@ -1276,3 +1276,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
