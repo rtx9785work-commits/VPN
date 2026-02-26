@@ -1,7 +1,7 @@
 """
 ╔══════════════════════════════════════════════════════════════════╗
 ║           Platinum VPN — Bot + Updater (Combined)               ║
-║  • aiogram 3 бот с SQLite базой данных (aiosqlite)              ║
+║  • aiogram 3 бот с SQLite базой данных (встроенный sqlite3)     ║
 ║  • Фоновый updater каждый час                                    ║
 ║  • Только Reality-серверы (Mobile / Mobile-2)                   ║
 ║  • Проверка VLESS Reality: TCP + TLS + VLESS-заголовок          ║
@@ -9,8 +9,8 @@
 ║  • Первые 2 сервера — информационные (реально работают)         ║
 ╚══════════════════════════════════════════════════════════════════╝
 
-Зависимости:
-    pip install aiogram aiosqlite aiohttp requests
+Зависимости (только стандартные + aiogram):
+    pip install aiogram aiohttp requests
 """
 
 # ══════════════════════════════════════════════════════════════════
@@ -21,6 +21,7 @@ import asyncio
 import re
 import ssl
 import socket
+import sqlite3
 import struct
 import sys
 import time
@@ -32,7 +33,6 @@ from datetime import datetime, timedelta
 from urllib.parse import unquote, quote
 
 import aiohttp
-import aiosqlite
 import requests
 
 from aiogram import Bot, Dispatcher, F, Router
@@ -173,34 +173,93 @@ class BroadcastState(StatesGroup):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  DATABASE  (aiosqlite — async SQLite, стандарт для Telegram-ботов)
+#  DATABASE  (встроенный sqlite3 — работает на любом хостинге)
+#  Все операции выполняются в ThreadPoolExecutor, чтобы не блокировать
+#  asyncio event loop бота.
 # ══════════════════════════════════════════════════════════════════
 
+_db_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="db")
+
+
+def _run_in_db(func):
+    """Запустить синхронную DB-функцию в выделенном потоке."""
+    loop = asyncio.get_event_loop()
+    return loop.run_in_executor(_db_executor, func)
+
+
+def _init_db_sync():
+    con = sqlite3.connect(DB_PATH, check_same_thread=False)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id          INTEGER PRIMARY KEY,
+            username         TEXT,
+            full_name        TEXT,
+            registered_at    TEXT NOT NULL,
+            subscription_end TEXT,
+            trial_used       INTEGER NOT NULL DEFAULT 0,
+            is_trial         INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    con.commit()
+    con.close()
+
+
 async def init_db():
-    """Создать таблицу при первом запуске."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id          INTEGER PRIMARY KEY,
-                username         TEXT,
-                full_name        TEXT,
-                registered_at    TEXT NOT NULL,
-                subscription_end TEXT,
-                trial_used       INTEGER NOT NULL DEFAULT 0,
-                is_trial         INTEGER NOT NULL DEFAULT 0
-            )
-        """)
-        await db.commit()
+    await _run_in_db(_init_db_sync)
+
+
+def _get_user_sync(user_id: int) -> dict | None:
+    con = sqlite3.connect(DB_PATH, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    cur = con.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    con.close()
+    return dict(row) if row else None
 
 
 async def db_get_user(user_id: int) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM users WHERE user_id = ?", (user_id,)
-        ) as cur:
-            row = await cur.fetchone()
-            return dict(row) if row else None
+    return await _run_in_db(lambda: _get_user_sync(user_id))
+
+
+def _upsert_user_sync(
+    user_id: int,
+    username: str | None,
+    full_name: str | None,
+    subscription_end: str | None,
+    trial_used: bool | None,
+    is_trial: bool | None,
+):
+    con = sqlite3.connect(DB_PATH, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    row = con.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
+
+    if row is None:
+        con.execute(
+            """INSERT INTO users
+               (user_id, username, full_name, registered_at,
+                subscription_end, trial_used, is_trial)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                user_id, username, full_name,
+                datetime.now().isoformat(),
+                subscription_end,
+                int(trial_used) if trial_used is not None else 0,
+                int(is_trial)   if is_trial   is not None else 0,
+            ),
+        )
+    else:
+        fields, vals = [], []
+        if username         is not None: fields.append("username = ?");         vals.append(username)
+        if full_name        is not None: fields.append("full_name = ?");        vals.append(full_name)
+        if subscription_end is not None: fields.append("subscription_end = ?"); vals.append(subscription_end)
+        if trial_used       is not None: fields.append("trial_used = ?");       vals.append(int(trial_used))
+        if is_trial         is not None: fields.append("is_trial = ?");         vals.append(int(is_trial))
+        if fields:
+            vals.append(user_id)
+            con.execute(f"UPDATE users SET {', '.join(fields)} WHERE user_id = ?", vals)
+
+    con.commit()
+    con.close()
 
 
 async def db_upsert_user(
@@ -211,58 +270,36 @@ async def db_upsert_user(
     trial_used: bool | None = None,
     is_trial: bool | None = None,
 ):
-    """Создать или частично обновить запись пользователя. None = не трогать."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT user_id FROM users WHERE user_id = ?", (user_id,)
-        ) as cur:
-            exists = await cur.fetchone()
+    await _run_in_db(lambda: _upsert_user_sync(
+        user_id, username, full_name, subscription_end, trial_used, is_trial
+    ))
 
-        if not exists:
-            await db.execute(
-                """INSERT INTO users
-                   (user_id, username, full_name, registered_at,
-                    subscription_end, trial_used, is_trial)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    user_id, username, full_name,
-                    datetime.now().isoformat(),
-                    subscription_end,
-                    int(trial_used) if trial_used is not None else 0,
-                    int(is_trial)   if is_trial   is not None else 0,
-                ),
-            )
-        else:
-            fields, vals = [], []
-            if username         is not None: fields.append("username = ?");         vals.append(username)
-            if full_name        is not None: fields.append("full_name = ?");        vals.append(full_name)
-            if subscription_end is not None: fields.append("subscription_end = ?"); vals.append(subscription_end)
-            if trial_used       is not None: fields.append("trial_used = ?");       vals.append(int(trial_used))
-            if is_trial         is not None: fields.append("is_trial = ?");         vals.append(int(is_trial))
-            if fields:
-                vals.append(user_id)
-                await db.execute(
-                    f"UPDATE users SET {', '.join(fields)} WHERE user_id = ?", vals
-                )
-        await db.commit()
+
+def _all_users_sync() -> list[dict]:
+    con = sqlite3.connect(DB_PATH, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM users").fetchall()
+    con.close()
+    return [dict(r) for r in rows]
 
 
 async def db_all_users() -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM users") as cur:
-            return [dict(r) for r in await cur.fetchall()]
+    return await _run_in_db(_all_users_sync)
+
+
+def _find_by_username_sync(username: str) -> dict | None:
+    con = sqlite3.connect(DB_PATH, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    row = con.execute(
+        "SELECT * FROM users WHERE LOWER(username) = LOWER(?)",
+        (username.lstrip("@"),),
+    ).fetchone()
+    con.close()
+    return dict(row) if row else None
 
 
 async def db_find_by_username(username: str) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM users WHERE LOWER(username) = LOWER(?)",
-            (username.lstrip("@"),),
-        ) as cur:
-            row = await cur.fetchone()
-            return dict(row) if row else None
+    return await _run_in_db(lambda: _find_by_username_sync(username))
 
 
 # ══════════════════════════════════════════════════════════════════
