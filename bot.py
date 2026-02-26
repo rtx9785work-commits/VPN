@@ -1,22 +1,3 @@
-"""
-╔══════════════════════════════════════════════════════════════════╗
-║           Platinum VPN — Bot + Updater (Combined)               ║
-║  • aiogram 3 бот с SQLite базой данных (встроенный sqlite3)     ║
-║  • Фоновый updater каждый час                                    ║
-║  • Только Reality-серверы (Mobile / Mobile-2)                   ║
-║  • Проверка VLESS Reality: TCP + TLS + VLESS-заголовок          ║
-║  • Точность проверки ~99%                                        ║
-║  • Первые 2 сервера — информационные (реально работают)         ║
-╚══════════════════════════════════════════════════════════════════╝
-
-Зависимости (только стандартные + aiogram):
-    pip install aiogram aiohttp requests
-"""
-
-# ══════════════════════════════════════════════════════════════════
-#  ИМПОРТЫ
-# ══════════════════════════════════════════════════════════════════
-
 import asyncio
 import re
 import ssl
@@ -48,15 +29,11 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 
 
-# ══════════════════════════════════════════════════════════════════
-#  КОНФИГУРАЦИЯ
-# ══════════════════════════════════════════════════════════════════
-
 TOKEN          = "8451116782:AAEwr_9qkXQanlb1i6T8VjrYm9D1B8UYb6U"
 ADMIN_ID       = 2039569420
 ADMIN_USERNAME = "hhlnnh"
 
-DB_PATH        = "platinum_vpn.db"          # SQLite — один файл рядом со скриптом
+DB_PATH        = "platinum_vpn.db"
 
 GITHUB_TOKEN   = "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"
 GIST_ID        = "41b2637809a3be0ffab57b9493bed2a5"
@@ -65,33 +42,70 @@ CLCK_API       = "https://clck.ru/--"
 
 TRIAL_DAYS     = 30
 
-# ── Updater ───────────────────────────────────────────────────────
 MAX_TOTAL       = 100
 MIN_TOTAL       = 50
-CHECK_TIMEOUT   = 6       # сек — увеличено для точности Reality
+CHECK_TIMEOUT   = 6
 MAX_WORKERS     = 80
 MAX_CHECK_SEC   = 110
-UPDATE_INTERVAL = 3600    # 1 час
+UPDATE_INTERVAL = 3600
 
-# ── Только Reality-источники (Mobile / Mobile-2) ──────────────────
 BYPASS_SOURCES = [
     "https://github.com/igareck/vpn-configs-for-russia/blob/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
     "https://github.com/igareck/vpn-configs-for-russia/blob/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt",
 ]
 
-ALLOWED_COUNTRIES = {
-    "Россия", "Казахстан", "Беларусь", "Украина", "Молдова",
-    "Грузия", "Армения", "Азербайджан", "Узбекистан",
-    "Финляндия", "Швеция", "Дания", "Норвегия",
-    "Эстония", "Латвия", "Литва",
-    "Германия", "Польша", "Австрия", "Чехия", "Словакия", "Венгрия",
-    "Румыния", "Болгария", "Сербия", "Хорватия", "Словения",
-    "Македония", "Босния", "Черногория", "Косово",
-    "Нидерланды", "Бельгия", "Франция", "Великобритания", "Ирландия",
-    "Испания", "Португалия", "Италия", "Греция", "Швейцария",
-    "Люксембург", "Кипр", "Мальта", "Исландия", "Албания",
-    "Турция", "США",
-}
+COUNTRY_PROXIMITY_ORDER = [
+    "Россия",
+    "Беларусь",
+    "Казахстан",
+    "Украина",
+    "Молдова",
+    "Грузия",
+    "Армения",
+    "Азербайджан",
+    "Узбекистан",
+    "Эстония",
+    "Латвия",
+    "Литва",
+    "Финляндия",
+    "Польша",
+    "Румыния",
+    "Болгария",
+    "Венгрия",
+    "Словакия",
+    "Чехия",
+    "Австрия",
+    "Сербия",
+    "Хорватия",
+    "Словения",
+    "Македония",
+    "Босния",
+    "Черногория",
+    "Косово",
+    "Швеция",
+    "Норвегия",
+    "Дания",
+    "Германия",
+    "Нидерланды",
+    "Бельгия",
+    "Люксембург",
+    "Швейцария",
+    "Франция",
+    "Италия",
+    "Испания",
+    "Португалия",
+    "Греция",
+    "Кипр",
+    "Мальта",
+    "Ирландия",
+    "Великобритания",
+    "Исландия",
+    "Албания",
+    "Турция",
+    "США",
+]
+
+ALLOWED_COUNTRIES = set(COUNTRY_PROXIMITY_ORDER)
 
 COUNTRY_MAP = {
     "Russia": "Россия", "Germany": "Германия", "Netherlands": "Нидерланды",
@@ -127,9 +141,6 @@ FLAG_MAP = {
     "Македония": "🇲🇰", "Босния": "🇧🇦", "Черногория": "🇲🇪", "Косово": "🇽🇰",
 }
 
-# Первые два сервера подписки — информационные заглушки.
-# Используют реальный Cloudflare IP + TLS, поэтому VPN-клиент
-# корректно добавляет их, не ломая список.
 PINNED_SERVERS = [
     "vless://00000000-0000-0000-0000-000000000001@104.16.0.1:443"
     "?type=tcp&security=tls&sni=cloudflare.com&fp=chrome&allowInsecure=1"
@@ -147,19 +158,11 @@ GIST_HEADER = (
 )
 
 
-# ══════════════════════════════════════════════════════════════════
-#  BOT INIT
-# ══════════════════════════════════════════════════════════════════
-
 bot    = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp     = Dispatcher(storage=MemoryStorage())
 router = Router()
 dp.include_router(router)
 
-
-# ══════════════════════════════════════════════════════════════════
-#  FSM STATES
-# ══════════════════════════════════════════════════════════════════
 
 class SupportState(StatesGroup):
     waiting_user_message = State()
@@ -172,18 +175,11 @@ class BroadcastState(StatesGroup):
     waiting_confirm = State()
 
 
-# ══════════════════════════════════════════════════════════════════
-#  DATABASE  (встроенный sqlite3 — работает на любом хостинге)
-#  Все операции выполняются в ThreadPoolExecutor, чтобы не блокировать
-#  asyncio event loop бота.
-# ══════════════════════════════════════════════════════════════════
-
 _db_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="db")
 
 
 def _run_in_db(func):
-    """Запустить синхронную DB-функцию в выделенном потоке."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return loop.run_in_executor(_db_executor, func)
 
 
@@ -221,39 +217,38 @@ async def db_get_user(user_id: int) -> dict | None:
     return await _run_in_db(lambda: _get_user_sync(user_id))
 
 
-def _upsert_user_sync(
-    user_id: int,
-    username: str | None,
-    full_name: str | None,
-    subscription_end: str | None,
-    trial_used: bool | None,
-    is_trial: bool | None,
-):
+_UNSET = object()
+
+
+def _upsert_user_sync(user_id, username, full_name, subscription_end, trial_used, is_trial):
     con = sqlite3.connect(DB_PATH, check_same_thread=False)
     con.row_factory = sqlite3.Row
     row = con.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)).fetchone()
 
     if row is None:
+        sub_val = None if (subscription_end is _UNSET) else subscription_end
         con.execute(
             """INSERT INTO users
                (user_id, username, full_name, registered_at,
                 subscription_end, trial_used, is_trial)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
-                user_id, username, full_name,
+                user_id,
+                username if username is not _UNSET else None,
+                full_name if full_name is not _UNSET else None,
                 datetime.now().isoformat(),
-                subscription_end,
-                int(trial_used) if trial_used is not None else 0,
-                int(is_trial)   if is_trial   is not None else 0,
+                sub_val,
+                int(trial_used) if (trial_used is not _UNSET and trial_used is not None) else 0,
+                int(is_trial)   if (is_trial   is not _UNSET and is_trial   is not None) else 0,
             ),
         )
     else:
         fields, vals = [], []
-        if username         is not None: fields.append("username = ?");         vals.append(username)
-        if full_name        is not None: fields.append("full_name = ?");        vals.append(full_name)
-        if subscription_end is not None: fields.append("subscription_end = ?"); vals.append(subscription_end)
-        if trial_used       is not None: fields.append("trial_used = ?");       vals.append(int(trial_used))
-        if is_trial         is not None: fields.append("is_trial = ?");         vals.append(int(is_trial))
+        if username         is not _UNSET: fields.append("username = ?");         vals.append(username)
+        if full_name        is not _UNSET: fields.append("full_name = ?");        vals.append(full_name)
+        if subscription_end is not _UNSET: fields.append("subscription_end = ?"); vals.append(subscription_end)
+        if trial_used       is not _UNSET: fields.append("trial_used = ?");       vals.append(int(trial_used) if trial_used is not None else 0)
+        if is_trial         is not _UNSET: fields.append("is_trial = ?");         vals.append(int(is_trial)   if is_trial   is not None else 0)
         if fields:
             vals.append(user_id)
             con.execute(f"UPDATE users SET {', '.join(fields)} WHERE user_id = ?", vals)
@@ -264,11 +259,11 @@ def _upsert_user_sync(
 
 async def db_upsert_user(
     user_id: int,
-    username: str | None = None,
-    full_name: str | None = None,
-    subscription_end: str | None = None,
-    trial_used: bool | None = None,
-    is_trial: bool | None = None,
+    username=_UNSET,
+    full_name=_UNSET,
+    subscription_end=_UNSET,
+    trial_used=_UNSET,
+    is_trial=_UNSET,
 ):
     await _run_in_db(lambda: _upsert_user_sync(
         user_id, username, full_name, subscription_end, trial_used, is_trial
@@ -301,10 +296,6 @@ def _find_by_username_sync(username: str) -> dict | None:
 async def db_find_by_username(username: str) -> dict | None:
     return await _run_in_db(lambda: _find_by_username_sync(username))
 
-
-# ══════════════════════════════════════════════════════════════════
-#  HELPERS
-# ══════════════════════════════════════════════════════════════════
 
 def is_active(user: dict) -> bool:
     if not user or not user.get("subscription_end"):
@@ -347,10 +338,6 @@ async def get_stats() -> dict:
     }
 
 
-# ══════════════════════════════════════════════════════════════════
-#  SHORT LINK (clck.ru)
-# ══════════════════════════════════════════════════════════════════
-
 async def get_short_link() -> str | None:
     try:
         unique_url = f"{GIST_RAW_URL}?_={uuid_mod.uuid4().hex}"
@@ -365,10 +352,6 @@ async def get_short_link() -> str | None:
         print(f"[clck.ru error] {e}")
     return None
 
-
-# ══════════════════════════════════════════════════════════════════
-#  KEYBOARDS & TEXTS
-# ══════════════════════════════════════════════════════════════════
 
 def main_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -423,12 +406,6 @@ HOW_TO_USE_TEXT = (
 )
 
 
-# ══════════════════════════════════════════════════════════════════
-#  BOT HANDLERS
-# ══════════════════════════════════════════════════════════════════
-
-# ── /start ────────────────────────────────────────────────────────
-
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     uid    = message.from_user.id
@@ -456,8 +433,6 @@ async def cb_main_menu(call: CallbackQuery, state: FSMContext):
     await state.clear()
     await call.message.edit_text(WELCOME_TEXT, reply_markup=main_menu_kb())
 
-
-# ── My Account ───────────────────────────────────────────────────
 
 @router.callback_query(F.data == "my_account")
 async def cb_my_account(call: CallbackQuery):
@@ -492,8 +467,6 @@ async def cb_my_account(call: CallbackQuery):
     )
 
 
-# ── Buy ──────────────────────────────────────────────────────────
-
 @router.callback_query(F.data == "buy")
 async def cb_buy(call: CallbackQuery):
     await call.message.edit_text(
@@ -507,7 +480,6 @@ async def cb_buy(call: CallbackQuery):
     )
 
 
-# Тарифы: (callback_data, days, stars, label)
 TARIFFS = {
     "pay_30":  (30,  30,  "30 дней",  "Platinum VPN — 30 дней"),
     "pay_90":  (90,  80,  "90 дней",  "Platinum VPN — 90 дней"),
@@ -540,9 +512,8 @@ async def pre_checkout(pcq: PreCheckoutQuery):
 async def successful_payment(message: Message):
     uid     = message.from_user.id
     user    = await db_get_user(uid) or {}
-    payload = message.successful_payment.invoice_payload  # "vpn_30d" / "vpn_65d" / ...
+    payload = message.successful_payment.invoice_payload
 
-    # Определяем срок по payload
     days_map = {"vpn_30d": 30, "vpn_90d": 90, "vpn_180d": 180, "vpn_360d": 360}
     days     = days_map.get(payload, 30)
     stars    = message.successful_payment.total_amount
@@ -578,8 +549,6 @@ async def successful_payment(message: Message):
         ]),
     )
 
-
-# ── Get Key ──────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "get_key")
 async def cb_get_key(call: CallbackQuery):
@@ -634,8 +603,6 @@ async def cb_get_key(call: CallbackQuery):
         )
 
 
-# ── Trial ────────────────────────────────────────────────────────
-
 @router.callback_query(F.data == "trial")
 async def cb_trial(call: CallbackQuery):
     user = await db_get_user(call.from_user.id)
@@ -671,8 +638,6 @@ async def cb_trial(call: CallbackQuery):
         reply_markup=back_kb(),
     )
 
-
-# ── Support ──────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "support")
 async def cb_support(call: CallbackQuery, state: FSMContext):
@@ -762,10 +727,6 @@ async def user_reply_message(message: Message, state: FSMContext):
     )
 
 
-# ══════════════════════════════════════════════════════════════════
-#  ADMIN PANEL
-# ══════════════════════════════════════════════════════════════════
-
 @router.message(Command("admin"))
 async def cmd_admin(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -786,8 +747,6 @@ async def cmd_admin(message: Message):
         "Единицы: <code>d</code> дни · <code>w</code> недели · <code>m</code> месяцы · <code>y</code> годы"
     )
 
-
-# ── !gift ─────────────────────────────────────────────────────────
 
 @router.message(F.text.regexp(r"^[`~!@#\"$%^&*.,/]gift\s+"))
 async def gift_command(message: Message):
@@ -824,8 +783,6 @@ async def gift_command(message: Message):
         await message.answer("⚠️ <i>Не удалось уведомить пользователя.</i>")
 
 
-# ── !revoke ───────────────────────────────────────────────────────
-
 @router.message(F.text.regexp(r"^[`~!@#\"$%^&*.,/]revoke\s+"))
 async def revoke_command(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -856,8 +813,6 @@ async def revoke_command(message: Message):
         await message.answer("⚠️ <i>Не удалось уведомить пользователя.</i>")
 
 
-# ── !users ────────────────────────────────────────────────────────
-
 @router.message(F.text.regexp(r"^[`~!@#\"$%^&*.,/]users$"))
 async def users_command(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -876,7 +831,6 @@ async def users_command(message: Message):
         uname     = f"@{u['username']}" if u.get("username") else f"ID:{u['user_id']}"
         lines.append(f"{tag} {uname} — до {end} ({days_left} дн.)")
 
-    # Разбить на чанки при необходимости
     chunk = ""
     for line in lines:
         if len(chunk) + len(line) + 1 > 4000:
@@ -887,8 +841,6 @@ async def users_command(message: Message):
     if chunk:
         await message.answer(chunk)
 
-
-# ── !broadcast ────────────────────────────────────────────────────
 
 @router.message(F.text.regexp(r"^[`~!@#\"$%^&*.,/]broadcast$"))
 async def broadcast_command(message: Message, state: FSMContext):
@@ -954,8 +906,6 @@ async def broadcast_cancel(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text("❌ Рассылка отменена.")
 
 
-# ── !sms ──────────────────────────────────────────────────────────
-
 @router.message(F.text.regexp(r"^[`~!@#\"$%^&*.,/]sms\s+"))
 async def sms_command(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -987,12 +937,7 @@ async def sms_command(message: Message):
         await message.answer("⚠️ <i>Не удалось отправить — бот заблокирован пользователем.</i>")
 
 
-# ══════════════════════════════════════════════════════════════════
-#  VLESS REALITY CHECKER  (~99% точность)
-# ══════════════════════════════════════════════════════════════════
-
 def _parse_vless(uri: str) -> dict | None:
-    """Разбирает vless://... URI в словарь параметров."""
     try:
         body = uri[8:]
         if '#' in body:
@@ -1019,59 +964,45 @@ def _parse_vless(uri: str) -> dict | None:
 
 
 def _build_vless_header(uuid_bytes: bytes) -> bytes:
-    """VLESS v0 заголовок — запрос CONNECT к 1.1.1.1:80."""
     target = b'1.1.1.1'
     return (
-        b'\x00'                 # version
-        + uuid_bytes            # UUID (16 байт)
-        + b'\x00'               # addons length = 0
-        + b'\x01'               # command: CONNECT
-        + struct.pack('>H', 80) # порт назначения
-        + b'\x02'               # тип адреса: domain
-        + bytes([len(target)])  # длина домена
-        + target                # домен
+        b'\x00'
+        + uuid_bytes
+        + b'\x00'
+        + b'\x01'
+        + struct.pack('>H', 80)
+        + b'\x02'
+        + bytes([len(target)])
+        + target
     )
 
 
-def _check_vless_reality(uri: str) -> bool:
-    """
-    Многоэтапная проверка VLESS Reality (~99% точность):
-
-    1. Парсинг и валидация UUID
-    2. TCP-соединение с таймаутом
-    3. TLS-хэндшейк с SNI (Reality сервер обязан принять)
-       — проверяем, что сервер не выдаёт TLS alert сразу
-    4. Отправка корректного VLESS v0 заголовка
-    5. Оценка ответа:
-       • молчание (timeout) → сервер ждёт данных → живой ✅
-       • любой байт        → сервер ответил → живой ✅
-       • TLS alert (0x15)  → неверный SNI/certs → мёртв ❌
-       • RST / EOF         → сервер отверг → мёртв ❌
-    """
+def _check_vless_reality(uri: str) -> tuple[bool, float]:
+    """Returns (is_alive, latency_ms). latency_ms=9999 if dead."""
     parsed = _parse_vless(uri)
     if not parsed:
-        return False
+        return False, 9999.0
 
     try:
         uuid_bytes = bytes.fromhex(parsed['uuid'].replace('-', ''))
         assert len(uuid_bytes) == 16
     except Exception:
-        return False
+        return False, 9999.0
 
     host = parsed['host']
     port = parsed['port']
     sec  = parsed['security']
     sni  = parsed['sni']
 
-    # 1. TCP connect
+    t_start = time.monotonic()
+
     try:
         sock = socket.create_connection((host, port), timeout=CHECK_TIMEOUT)
         sock.settimeout(CHECK_TIMEOUT)
     except Exception:
-        return False
+        return False, 9999.0
 
     try:
-        # 2. TLS / Reality handshake
         if sec in ('reality', 'tls', 'xtls'):
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             ctx.check_hostname = False
@@ -1088,39 +1019,34 @@ def _check_vless_reality(uri: str) -> bool:
                     do_handshake_on_connect=True,
                 )
             except ssl.SSLError:
-                return False
+                return False, 9999.0
             except OSError:
-                return False
+                return False, 9999.0
 
-        # 3. Отправка VLESS-заголовка
         header = _build_vless_header(uuid_bytes)
         sock.sendall(header)
 
-        # 4. Анализ ответа
         sock.settimeout(CHECK_TIMEOUT)
         try:
             chunk = sock.recv(128)
-            # TLS alert record type = 0x15 → сервер недоволен
             if chunk and len(chunk) >= 2 and chunk[0] == 0x15:
-                return False
-            return True   # любой другой ответ — сервер жив
+                return False, 9999.0
+            latency = (time.monotonic() - t_start) * 1000
+            return True, latency
         except socket.timeout:
-            return True   # молчит → ждёт данных → живой
+            latency = (time.monotonic() - t_start) * 1000
+            return True, latency
         except (ConnectionResetError, ConnectionAbortedError, OSError):
-            return False  # RST/EOF → мёртв
+            return False, 9999.0
 
     except Exception:
-        return False
+        return False, 9999.0
     finally:
         try:
             sock.close()
         except Exception:
             pass
 
-
-# ══════════════════════════════════════════════════════════════════
-#  UPDATER: загрузка → фильтрация → проверка → публикация
-# ══════════════════════════════════════════════════════════════════
 
 def _to_raw(url: str) -> str:
     return url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
@@ -1137,7 +1063,6 @@ def _get_country(name: str) -> str:
 
 
 def _fetch_reality_lines(url: str) -> list[str]:
-    """Скачать источник, вернуть только строки с Reality VLESS."""
     try:
         r = requests.get(_to_raw(url), timeout=20)
         if r.status_code != 200:
@@ -1148,7 +1073,6 @@ def _fetch_reality_lines(url: str) -> list[str]:
             if not line or not line.startswith('vless://') or '#' not in line:
                 continue
             lo = line.lower()
-            # Принимаем строку только если содержит признаки Reality
             if 'reality' in lo or 'pbk=' in lo:
                 out.append(line)
         return out
@@ -1182,7 +1106,6 @@ def _collect_candidates() -> list[dict]:
     return result
 
 
-# Thread-safe прогресс-бар
 _lock   = threading.Lock()
 _p_done = _p_ok = _p_total = 0
 
@@ -1214,61 +1137,70 @@ def _verify_all(candidates: list[dict]) -> list[dict]:
         for f in as_completed(fut_map, timeout=timeout_left):
             item = fut_map[f]
             try:
-                ok = f.result(timeout=1)
+                ok, latency = f.result(timeout=1)
             except Exception:
-                ok = False
+                ok, latency = False, 9999.0
             _tick(ok)
             if ok:
-                good.append(item)
+                good.append({**item, 'latency': latency})
 
     print()
     return good
 
 
-def _group_by_country(items: list[dict], quota: int) -> list[dict]:
-    by_c:  dict = defaultdict(list)
+def _select_best_per_country(items: list[dict]) -> dict[str, list[dict]]:
+    by_country: dict[str, list[dict]] = defaultdict(list)
     for item in items:
-        by_c[item['country']].append(item)
-
-    order = sorted(by_c.keys(), key=lambda c: -len(by_c[c]))
-    if not order:
-        return []
-
-    MAX_PER = 5
-    alloc   = {c: 1 for c in order}
-    rem     = quota - len(order)
-    while rem > 0:
-        gave = 0
-        for c in order:
-            if rem <= 0:
-                break
-            if alloc[c] < min(len(by_c[c]), MAX_PER):
-                alloc[c] += 1
-                rem -= 1
-                gave += 1
-        if gave == 0:
-            break
-
-    sel = []
-    for c in order:
-        sel.extend(by_c[c][:alloc[c]])
-    return sel[:quota]
+        by_country[item['country']].append(item)
+    result = {}
+    for country, servers in by_country.items():
+        result[country] = sorted(servers, key=lambda x: x.get('latency', 9999.0))
+    return result
 
 
 def _build_subscription(verified: list[dict]) -> str:
-    picked        = _group_by_country(verified, MAX_TOTAL)
-    lines         = list(PINNED_SERVERS)   # информационные серверы — первыми
-    country_total = Counter(item['country'] for item in picked)
+    by_country = _select_best_per_country(verified)
+
+    countries_present = [c for c in COUNTRY_PROXIMITY_ORDER if c in by_country]
+    countries_other   = [c for c in by_country if c not in set(COUNTRY_PROXIMITY_ORDER)]
+    ordered_countries = countries_present + countries_other
+
+    available_slots = MAX_TOTAL - len(PINNED_SERVERS)
+    num_countries   = len(ordered_countries)
+
+    if num_countries == 0:
+        return GIST_HEADER + "\n".join(PINNED_SERVERS) + "\n"
+
+    base_per_country = max(1, available_slots // num_countries)
+    extra_slots      = available_slots - base_per_country * num_countries
+
+    alloc: dict[str, int] = {}
+    for country in ordered_countries:
+        alloc[country] = min(base_per_country, len(by_country[country]))
+
+    remaining = available_slots - sum(alloc.values())
+    for country in ordered_countries:
+        if remaining <= 0:
+            break
+        can_add = len(by_country[country]) - alloc[country]
+        if can_add > 0:
+            add = min(can_add, remaining)
+            alloc[country] += add
+            remaining -= add
+
+    lines = list(PINNED_SERVERS)
+    country_total = {c: alloc[c] for c in ordered_countries}
     country_seen: Counter = Counter()
 
-    for item in picked:
-        country = item['country']
+    for country in ordered_countries:
+        servers = by_country[country][:alloc[country]]
         flag    = FLAG_MAP.get(country, '🌐')
-        country_seen[country] += 1
-        n     = country_seen[country]
-        total = country_total[country]
-        label = f"{flag} {country}" if total == 1 else f"{flag} {country} #{n}"
-        lines.append(f"{item['raw_config']}#{quote(label)}")
+        total   = country_total[country]
+        for server in servers:
+            country_seen[country] += 1
+            n     = country_seen[country]
+            label = f"{flag} {country}" if total == 1 else f"{flag} {country} #{n}"
+            lines.append(f"{server['raw_config']}#{quote(label)}")
 
     return GIST_HEADER + "\n".join(lines) + "\n"
 
@@ -1284,7 +1216,10 @@ def _push_to_gist(content: str) -> bool:
             json={"files": {"servers.txt": {"content": content}}},
             timeout=30,
         )
-        return res.status_code == 200
+        if res.status_code != 200:
+            print(f"  [Gist error] status={res.status_code} body={res.text[:200]}")
+            return False
+        return True
     except Exception as e:
         print(f"  [Gist error] {e}")
         return False
@@ -1312,9 +1247,8 @@ def run_update():
         print(f"  ⚠️  Мало серверов ({total_ok} < {MIN_TOTAL}).")
 
     content  = _build_subscription(verified)
-    srv_cnt  = len(verified) + len(PINNED_SERVERS)
-    print(f"  Итого в подписке: {srv_cnt} серверов "
-          f"(включая {len(PINNED_SERVERS)} информационных)")
+    srv_cnt  = content.count('\nvless://') + content.count('\nvless://')
+    print(f"  Итого в подписке: до {MAX_TOTAL} серверов (+ {len(PINNED_SERVERS)} информационных)")
 
     print("\n  Отправка в Gist...", end=" ", flush=True)
     if _push_to_gist(content):
@@ -1323,12 +1257,7 @@ def run_update():
         print("❌ Ошибка!")
 
 
-# ══════════════════════════════════════════════════════════════════
-#  BACKGROUND UPDATER (asyncio task → ThreadPoolExecutor)
-# ══════════════════════════════════════════════════════════════════
-
 async def updater_loop():
-    """Запускает run_update() в executor каждый час, не блокируя бот."""
     loop = asyncio.get_running_loop()
     while True:
         try:
@@ -1339,14 +1268,10 @@ async def updater_loop():
         await asyncio.sleep(UPDATE_INTERVAL)
 
 
-# ══════════════════════════════════════════════════════════════════
-#  ENTRY POINT
-# ══════════════════════════════════════════════════════════════════
-
 async def main():
     await init_db()
-    asyncio.create_task(updater_loop())             # фоновый updater
-    await dp.start_polling(bot, skip_updates=True)  # Telegram bot
+    asyncio.create_task(updater_loop())
+    await dp.start_polling(bot, skip_updates=True)
 
 
 if __name__ == "__main__":
